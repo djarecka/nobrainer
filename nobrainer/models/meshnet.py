@@ -5,8 +5,7 @@ Implemented according to the [MeshNet manuscript](https://arxiv.org/abs/1612.009
 
 import tensorflow as tf
 from tensorflow.keras import layers
-
-from nobrainer.layers.variational_convolution import VWNConv3D
+import tensorflow_probability as tfp
 
 
 def meshnet(n_classes, input_shape, receptive_field=67, filters=71, activation='relu', dropout_rate=0.25, batch_size=None, name='meshnet'):
@@ -84,7 +83,7 @@ def meshnet(n_classes, input_shape, receptive_field=67, filters=71, activation='
     return tf.keras.Model(inputs=inputs, outputs=x, name=name)
 
 
-def meshnet_vwn(n_classes, input_shape, receptive_field=67, filters=71, activation='relu', is_mc=False, batch_size=None, name='meshnet_vwn'):
+def variational_meshnet(n_classes, input_shape, receptive_field=67, filters=71, activation='relu', is_mc=True, batch_size=None, name='meshnet_vwn'):
     """Instantiate variational MeshNet model, which also uses weight
     normalization.
 
@@ -124,14 +123,26 @@ def meshnet_vwn(n_classes, input_shape, receptive_field=67, filters=71, activati
     if receptive_field not in {37, 67, 129}:
         raise ValueError("unknown receptive field. Legal values are 37, 67, and 129.")
 
+    if is_mc:
+        kernel_posterior_tensor_fn = lambda d: d.sample()
+        bias_posterior_tensor_fn = (lambda d: d.sample())
+    else:
+        kernel_posterior_tensor_fn = lambda d: d.mean()
+        bias_posterior_tensor_fn = (lambda d: d.mean())
+
     def one_layer(x, layer_num, dilation_rate=(1, 1, 1)):
         # Normally, meshnet has layers of
         # conv -> batchnorm --> activation --> dropout
         # but for the variational model, we do not include batchnorm and
-        # dropout. The variational convolution implements weightnorm, which
-        # gives similar benefits as batchnorm without the extra trainable
-        # parameters.
-        x = VWNConv3D(filters, kernel_size=(3, 3, 3), padding='same', dilation_rate=dilation_rate, is_mc=is_mc, name='layer{}/vwnconv3d'.format(layer_num))(x)
+        # dropout.
+        x = tfp.layers.Convolution3DReparameterization(
+            filters=filters,
+            kernel_size=(3, 3, 3),
+            padding='same',
+            dilation_rate=dilation_rate,
+            kernel_posterior_tensor_fn=kernel_posterior_tensor_fn,
+            bias_posterior_tensor_fn=bias_posterior_tensor_fn,
+            name='layer{}/vconv3d'.format(layer_num))(x)
         x = layers.Activation(activation, name='layer{}/activation'.format(layer_num))(x)
         return x
 
@@ -162,7 +173,13 @@ def meshnet_vwn(n_classes, input_shape, receptive_field=67, filters=71, activati
         x = one_layer(x, 6, dilation_rate=(32, 32, 32))
         x = one_layer(x, 7)
 
-    x = VWNConv3D(filters=n_classes, kernel_size=(1, 1, 1), padding='same', is_mc=is_mc, name='classification/vwnconv3d')(x)
+    x = tfp.layers.Convolution3DReparameterization(
+        filters=n_classes,
+        kernel_size=(1, 1, 1),
+        padding='same',
+        kernel_posterior_tensor_fn=kernel_posterior_tensor_fn,
+        bias_posterior_tensor_fn=bias_posterior_tensor_fn,
+        name='classification/vconv3d')(x)
 
     final_activation = 'sigmoid' if n_classes == 1 else 'softmax'
     x = layers.Activation(final_activation, name='classification/activation')(x)
