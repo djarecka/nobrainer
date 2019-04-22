@@ -5,7 +5,8 @@ Implemented according to the [MeshNet manuscript](https://arxiv.org/abs/1612.009
 
 import tensorflow as tf
 from tensorflow.keras import layers
-import tensorflow_probability as tfp
+
+from nobrainer.layers.variational import Convolution3DReparameterization
 
 
 def meshnet(n_classes, input_shape, receptive_field=67, filters=71, activation='relu', dropout_rate=0.25, batch_size=None, name='meshnet'):
@@ -135,7 +136,7 @@ def variational_meshnet(n_classes, input_shape, receptive_field=67, filters=71, 
         # conv -> batchnorm --> activation --> dropout
         # but for the variational model, we do not include batchnorm and
         # dropout.
-        x = tfp.layers.Convolution3DReparameterization(
+        x = Convolution3DReparameterization(
             filters=filters,
             kernel_size=(3, 3, 3),
             padding='same',
@@ -173,7 +174,7 @@ def variational_meshnet(n_classes, input_shape, receptive_field=67, filters=71, 
         x = one_layer(x, 6, dilation_rate=(32, 32, 32))
         x = one_layer(x, 7)
 
-    x = tfp.layers.Convolution3DReparameterization(
+    x = Convolution3DReparameterization(
         filters=n_classes,
         kernel_size=(1, 1, 1),
         padding='same',

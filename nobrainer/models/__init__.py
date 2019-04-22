@@ -1,6 +1,6 @@
 from nobrainer.models.highresnet import highresnet
 from nobrainer.models.meshnet import meshnet
-from nobrainer.models.meshnet import meshnet_vwn
+from nobrainer.models.meshnet import variational_meshnet
 from nobrainer.models.unet import unet
 
 
@@ -22,6 +22,7 @@ def get(name):
         'highresnet': highresnet,
         'meshnet': meshnet,
         'unet': unet,
+        'variational_meshnet': variational_meshnet,
     }
 
     try:
