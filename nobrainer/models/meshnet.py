@@ -6,7 +6,8 @@ Implemented according to the [MeshNet manuscript](https://arxiv.org/abs/1612.009
 import tensorflow as tf
 from tensorflow.keras import layers
 
-from nobrainer.layers.variational import Convolution3DReparameterization
+from nobrainer.layers.variational import Conv3DFlipoutWeightNorm
+from nobrainer.layers.variational import Conv3DReparameterizationWeightNorm
 
 
 def meshnet(n_classes, input_shape, receptive_field=67, filters=71, activation='relu', dropout_rate=0.25, batch_size=None, name='meshnet'):
@@ -84,12 +85,11 @@ def meshnet(n_classes, input_shape, receptive_field=67, filters=71, activation='
     return tf.keras.Model(inputs=inputs, outputs=x, name=name)
 
 
-def variational_meshnet(n_classes, input_shape, receptive_field=67, filters=71, activation='relu', is_mc=True, batch_size=None, name='meshnet_vwn'):
+def variational_meshnet(n_classes, input_shape, receptive_field=67, filters=71, activation='relu', is_mc=True, batch_size=None, flipout=True, name='meshnet_vwn'):
     """Instantiate variational MeshNet model, which also uses weight
     normalization.
 
     Please see https://arxiv.org/abs/1805.10863 for more information.
-
 
     Parameters
     ----------
@@ -110,6 +110,8 @@ def variational_meshnet(n_classes, input_shape, receptive_field=67, filters=71, 
         gaussian distribution.
     batch_size: int, number of samples in each batch. This must be set when
         training on TPUs.
+    flipout: boolean, if True, use `Conv3DFlipoutWeightNorm` class, otherwise
+        use `Conv3DReparameterizationWeightNorm` class.
     name: str, name to give to the resulting model object.
 
     Returns
@@ -131,20 +133,25 @@ def variational_meshnet(n_classes, input_shape, receptive_field=67, filters=71, 
         kernel_posterior_tensor_fn = lambda d: d.mean()
         bias_posterior_tensor_fn = (lambda d: d.mean())
 
+    if flipout:
+        convolution_layer = Conv3DFlipoutWeightNorm
+    else:
+        convolution_layer = Conv3DReparameterizationWeightNorm
+
     def one_layer(x, layer_num, dilation_rate=(1, 1, 1)):
         # Normally, meshnet has layers of
         # conv -> batchnorm --> activation --> dropout
         # but for the variational model, we do not include batchnorm and
         # dropout.
-        x = Convolution3DReparameterization(
+        x = convolution_layer(
             filters=filters,
             kernel_size=(3, 3, 3),
             padding='same',
             dilation_rate=dilation_rate,
             kernel_posterior_tensor_fn=kernel_posterior_tensor_fn,
             bias_posterior_tensor_fn=bias_posterior_tensor_fn,
+            activation=activation,
             name='layer{}/vconv3d'.format(layer_num))(x)
-        x = layers.Activation(activation, name='layer{}/activation'.format(layer_num))(x)
         return x
 
     inputs = layers.Input(shape=input_shape, batch_size=batch_size, name='inputs')
@@ -174,15 +181,14 @@ def variational_meshnet(n_classes, input_shape, receptive_field=67, filters=71, 
         x = one_layer(x, 6, dilation_rate=(32, 32, 32))
         x = one_layer(x, 7)
 
-    x = Convolution3DReparameterization(
+    final_activation = 'sigmoid' if n_classes == 1 else 'softmax'
+    x = convolution_layer(
         filters=n_classes,
         kernel_size=(1, 1, 1),
         padding='same',
         kernel_posterior_tensor_fn=kernel_posterior_tensor_fn,
         bias_posterior_tensor_fn=bias_posterior_tensor_fn,
+        activation=final_activation,
         name='classification/vconv3d')(x)
-
-    final_activation = 'sigmoid' if n_classes == 1 else 'softmax'
-    x = layers.Activation(final_activation, name='classification/activation')(x)
 
     return tf.keras.Model(inputs=inputs, outputs=x, name=name)
