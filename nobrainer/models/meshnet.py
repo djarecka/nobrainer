@@ -128,10 +128,10 @@ def variational_meshnet(n_classes, input_shape, receptive_field=67, filters=71, 
 
     if is_mc:
         kernel_posterior_tensor_fn = lambda d: d.sample()
-        bias_posterior_tensor_fn = (lambda d: d.sample())
+        bias_posterior_tensor_fn = lambda d: d.sample()
     else:
         kernel_posterior_tensor_fn = lambda d: d.mean()
-        bias_posterior_tensor_fn = (lambda d: d.mean())
+        bias_posterior_tensor_fn = lambda d: d.mean()
 
     if flipout:
         convolution_layer = Conv3DFlipoutWeightNorm
