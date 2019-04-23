@@ -14,11 +14,12 @@ class Conv3DWeightNorm(layers.Conv3D):
     """
 
     def build(self, input_shape):
-        g = self.add_weight(
-            name='v',
+        self.g = self.add_weight(
+            name='g_weightnorm',
             shape=(1, 1, 1, 1, self.filters),
+            dtype=self.dtype,
             initializer='ones',
             trainable=True)
         super().build(input_shape=input_shape)
-        # l2_normalize calculates v / ||v||
-        self.kernel = g * tf.nn.l2_normalize(self.kernel, axis=[0, 1, 2, 3])
+        v_over_vnorm = tf.nn.l2_normalize(self.kernel, axis=[0, 1, 2, 3])
+        self.kernel = self.g * v_over_vnorm
