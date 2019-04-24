@@ -1,3 +1,5 @@
 from nobrainer.layers.padding import ZeroPadding3DChannels
 from nobrainer.layers.variational import Conv3DFlipoutWeightNorm
 from nobrainer.layers.variational import Conv3DReparameterizationWeightNorm
+from nobrainer.layers.weightnorm import Conv3DWeightNorm
+from nobrainer.layers.weightnorm import DenseWeightNorm
