@@ -5,6 +5,7 @@ Implemented according to the [MeshNet manuscript](https://arxiv.org/abs/1612.009
 
 import tensorflow as tf
 from tensorflow.keras import layers
+import tensorflow_addons as tfa
 
 from nobrainer.layers.variational_convolution import VWNConv3D
 
@@ -44,7 +45,7 @@ def meshnet(n_classes, input_shape, receptive_field=67, filters=71, activation='
 
     def one_layer(x, layer_num, dilation_rate=(1, 1, 1)):
         x = layers.Conv3D(filters, kernel_size=(3, 3, 3), padding='same', dilation_rate=dilation_rate, name='layer{}/conv3d'.format(layer_num))(x)
-        x = layers.BatchNormalization(name='layer{}/batchnorm'.format(layer_num))(x)
+        x = tfa.layers.GroupNormalization(groups=1, name='layer{}/norm'.format(layer_num))(x)
         x = layers.Activation(activation, name='layer{}/activation'.format(layer_num))(x)
         x = layers.Dropout(dropout_rate, name='layer{}/dropout'.format(layer_num))(x)
         return x

@@ -54,6 +54,7 @@ def cli():
 @cli.command()
 @click.option('-c', '--csv', type=click.Path(exists=True), required=True, **_option_kwds)
 @click.option('-t', '--tfrecords-template', default='tfrecords/data_shard-{shard:03d}.tfrecords', required=True, **_option_kwds)
+@click.option('--volumetric-labels/--no-volumetric-labels', default=True, help='If true, labels are paths to volumes. Otherwise, labels are scalars.', **_option_kwds)
 @click.option('-s', '--volume-shape', nargs=3, type=int, required=True, **_option_kwds)
 @click.option('-n', '--volumes-per-shard', type=int, default=100, help='Number of volume pairs per TFRecords file.', **_option_kwds)
 @click.option('--to-ras/--no-to-ras', default=True, help='Reorient volumes to RAS before saving to TFRecords.', **_option_kwds)
@@ -61,7 +62,7 @@ def cli():
 @click.option('--verify-volumes/--no-verify-volumes', default=True, help='Verify volume pairs before converting. This option is highly recommended, as it checks that shapes of features and labels are equal to "volume-shape", that labels are (or can safely be coerced to) an integer type, and that labels are all >= 0.', **_option_kwds)
 @click.option('-j', '--num-parallel-calls', default=-1, type=int, help='Number of processes to use. If -1, uses all available processes.', **_option_kwds)
 @click.option('-v', '--verbose', is_flag=True, help='Print progress bar.', **_option_kwds)
-def convert(*, csv, tfrecords_template, volume_shape, volumes_per_shard, to_ras, gzip, verify_volumes, num_parallel_calls, verbose):
+def convert(*, csv, tfrecords_template, volumetric_labels, volume_shape, volumes_per_shard, to_ras, gzip, verify_volumes, num_parallel_calls, verbose):
     """Convert medical imaging volumes to TFRecords.
 
     Volumes must all be the same shape. This will overwrite existing TFRecords files.
@@ -76,6 +77,7 @@ def convert(*, csv, tfrecords_template, volume_shape, volumes_per_shard, to_ras,
     if not os.path.exists(_dirname):
         raise ValueError("directory does not exist: {}".format(_dirname))
 
+    # TODO: verify differently if labels are scalars.
     if verify_volumes:
         invalid_pairs = _verify_features_labels(
             volume_filepaths=volume_filepaths,
@@ -99,6 +101,7 @@ def convert(*, csv, tfrecords_template, volume_shape, volumes_per_shard, to_ras,
     _convert(
         volume_filepaths=volume_filepaths,
         tfrecords_template=tfrecords_template,
+        volumetric_labels=volumetric_labels,
         volumes_per_shard=volumes_per_shard,
         to_ras=to_ras,
         gzip_compressed=gzip,

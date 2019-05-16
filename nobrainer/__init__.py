@@ -3,7 +3,7 @@ from distutils.version import LooseVersion
 import tensorflow as tf
 
 # For tensorflow<2.0
-tf.enable_v2_behavior()
+# tf.enable_v2_behavior()
 
 if LooseVersion(tf.__version__) < LooseVersion("1.13.1"):
     raise ValueError(

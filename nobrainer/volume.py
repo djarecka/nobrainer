@@ -14,7 +14,8 @@ from nobrainer.transform import warp_features_labels
 
 def get_dataset(file_pattern, n_classes, batch_size, volume_shape,
                 block_shape=None, n_epochs=None, mapping=None, augment=False,
-                shuffle_buffer_size=None, num_parallel_calls=None):
+                shuffle_buffer_size=None, volumetric_labels=True,
+                num_parallel_calls=None):
     """Return `tf.data.Dataset` that preprocesses data for training or prediction.
 
     Labels are preprocessed for binary or multiclass segmentation according to
@@ -46,6 +47,8 @@ def get_dataset(file_pattern, n_classes, batch_size, volume_shape,
     shuffle_buffer_size: int, buffer of full volumes to shuffle. If this is not
         None, then the list of files found by 'file_pattern' is also shuffled
         at every iteration.
+    volumetric_labels: boolean, if true, the labels are volumetric arrays.
+        Otherwise, the labels are 32-bit float scalars.
     num_parallel_calls: int, number of parallel calls to make for data loading
         and processing.
 
@@ -77,7 +80,8 @@ def get_dataset(file_pattern, n_classes, batch_size, volume_shape,
 
     # Parse each example in each TFRecords file as a tensor of features and a
     # tensor of labels.
-    parse_fn = get_parse_fn(volume_shape=volume_shape)
+    parse_fn = get_parse_fn(
+        volume_shape=volume_shape, volumetric_labels=volumetric_labels)
     dataset = dataset.map(map_func=parse_fn)
 
     # At this point, dataset output will be two tensors, both with shape

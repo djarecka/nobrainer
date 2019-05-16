@@ -49,7 +49,7 @@ def read_volume(filepath, dtype=None, return_affine=False):
     return data if not return_affine else (data, img.affine)
 
 
-def convert(volume_filepaths, tfrecords_template="tfrecords/data_shard-{shard:03d}.tfrecords", volumes_per_shard=100, to_ras=True, gzip_compressed=True, num_parallel_calls=None, verbose=1):
+def convert(volume_filepaths, tfrecords_template="tfrecords/data_shard-{shard:03d}.tfrecords", volumetric_labels=True, volumes_per_shard=100, to_ras=True, gzip_compressed=True, num_parallel_calls=None, verbose=1):
     """Convert a list of features and labels volumes to TFRecords. The volume
     data and the affine for each volume are saved, so the original images can
     be recreated. This method uses multiple cores but can still take a considerable
@@ -78,6 +78,8 @@ def convert(volume_filepaths, tfrecords_template="tfrecords/data_shard-{shard:03
     tfrecords_template: string template, path to save new tfrecords file with the string formatting
         key 'shard'. The shard index is entered
         Extension should be '.tfrecords'.
+    volumetric_labels: boolean, if true, the labels are paths to volumes.
+        Otherwise, the labels are scalars.
     volumes_per_shard: int, number of pairs of volumes per tfrecords file.
     to_ras: boolean, if true, reorient volumes to RAS with `nibabel.as_closest_canonical`.
     gzip_compressed: boolean, if true, compress data with Gzip. This is highly
@@ -107,10 +109,15 @@ def convert(volume_filepaths, tfrecords_template="tfrecords/data_shard-{shard:03
     volume_filepaths_shards = [
         [tfrecords_template.format(shard=idx), shard.tolist()]
         for idx, shard in enumerate(np.array_split(volume_filepaths, n_shards))]
-    map_fn = functools.partial(
-        _convert, to_ras=to_ras, gzip_compressed=gzip_compressed)
 
-    print("Converting {} pairs of files to {} TFRecords.".format(len(volume_filepaths), len(volume_filepaths_shards)))
+    if volumetric_labels:
+        map_fn = functools.partial(
+            _convert_volumetric_labels, to_ras=to_ras, gzip_compressed=gzip_compressed)
+    else:
+        map_fn = functools.partial(
+            _convert_scalar_labels, to_ras=to_ras, gzip_compressed=gzip_compressed)
+
+    print("Converting {} examples to {} TFRecords.".format(len(volume_filepaths), len(volume_filepaths_shards)))
     progbar = tf.keras.utils.Progbar(len(volume_filepaths_shards), verbose=verbose)
     progbar.update(0)
     if num_parallel_calls is None:
@@ -126,7 +133,7 @@ def convert(volume_filepaths, tfrecords_template="tfrecords/data_shard-{shard:03
                 progbar.add(1)
 
 
-def _convert(tfrecords_path_volume_filepaths, to_ras=True, gzip_compressed=True):
+def _convert_volumetric_labels(tfrecords_path_volume_filepaths, to_ras=True, gzip_compressed=True):
     """Convert a nested list of files to one TFRecords file. This function is
     not intended for users. It is used as part of the multiprocessing function `convert`.
 
@@ -180,7 +187,40 @@ def _convert(tfrecords_path_volume_filepaths, to_ras=True, gzip_compressed=True)
             writer.write(this_example.SerializeToString())
 
 
-def get_parse_fn(volume_shape=(256, 256, 256), include_affines=False):
+def _convert_scalar_labels(tfrecords_path_volume_filepaths, to_ras=True, gzip_compressed=True):
+    tfrecords_path, volume_filepaths = tfrecords_path_volume_filepaths
+
+    def _make_one_example(features_filepath, label):
+        """Create a `tf.train.Example` instance of the given arrays of volumetric features and float label."""
+        dtype = _TFRECORDS_FEATURES_DTYPE
+        x = nib.load(features_filepath)
+        if to_ras:
+            x = nib.as_closest_canonical(x)
+        xdata = x.get_fdata(caching='unchanged', dtype=dtype)
+        ydata = np.float32(label)
+
+        def bytes_feature(value):
+            return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+        feature = {
+            'volume': bytes_feature(xdata.ravel().tostring()),
+            'volume_affine': bytes_feature(x.affine.astype(dtype).ravel().tostring()),
+            'label': bytes_feature(ydata.ravel().tostring()),
+        }
+        return tf.train.Example(features=tf.train.Features(feature=feature))
+
+    if gzip_compressed:
+        options = tf.io.TFRecordOptions(compression_type=tf.io.TFRecordCompressionType.GZIP)
+    else:
+        options = None
+
+    with tf.io.TFRecordWriter(tfrecords_path, options=options) as writer:
+        for fpath, label in volume_filepaths:
+            this_example = _make_one_example(features_filepath=fpath, label=label)
+            writer.write(this_example.SerializeToString())
+
+
+def get_parse_fn(volume_shape=(256, 256, 256), include_affines=False, volumetric_labels=True):
     """Return a callable that can parse examples from a TFRecords file. It is
     assumed that each eaxmple in the TFRecords file has the keys 'volume' and
     'label'. If 'include_affines' is true, each example must also have the keys
@@ -190,6 +230,8 @@ def get_parse_fn(volume_shape=(256, 256, 256), include_affines=False):
     ----------
     volume_shape: tuple of 3 ints, the shape of each volume in the TFRecords file.
     include_affines: boolean, if true, return affine along with volumetric data.
+    volumetric_labels: boolean, if true, the labels are volumetric arrays.
+        Otherwise, the labels are 32-bit float scalars.
 
     Returns
     -------
@@ -213,14 +255,20 @@ def get_parse_fn(volume_shape=(256, 256, 256), include_affines=False):
 
         if include_affines:
             features['volume_affine'] = tf.io.FixedLenFeature(shape=[], dtype=tf.string)
-            features['label_affine'] = tf.io.FixedLenFeature(shape=[], dtype=tf.string)
+            if volumetric_labels:
+                features['label_affine'] = tf.io.FixedLenFeature(shape=[], dtype=tf.string)
+            else:
+                features['label_affine'] = None
 
         def decode(s):
             return tf.io.decode_raw(s, _TFRECORDS_FEATURES_DTYPE)
 
         example = tf.io.parse_single_example(serialized=serialized, features=features)
         volume = tf.reshape(decode(example['volume']), shape=volume_shape)
-        label = tf.reshape(decode(example['label']), shape=volume_shape)
+        if volumetric_labels:
+            label = tf.reshape(decode(example['label']), shape=volume_shape)
+        else:
+            label = tf.reshape(decode(example['label']), shape=(1,))
 
         if include_affines:
             volume_affine = tf.reshape(decode(example['volume_affine']), shape=affine_shape)

@@ -5,6 +5,7 @@ Implemented according to the [HighResNet manuscript](https://arxiv.org/abs/1707.
 
 import tensorflow as tf
 from tensorflow.keras import layers
+import tensorflow_addons as tfa
 
 from nobrainer.layers.padding import ZeroPadding3DChannels
 
@@ -17,39 +18,39 @@ def highresnet(n_classes, input_shape, activation='relu', dropout_rate=0, name='
         'padding': 'same',
     }
 
-    n_base_filters = 16
+    n_base_filters = 12
 
     inputs = layers.Input(shape=input_shape)
     x = layers.Conv3D(n_base_filters, **conv_kwds)(inputs)
 
     for ii in range(3):
         skip = x
-        x = layers.BatchNormalization()(x)
+        # x = tfa.layers.GroupNormalization(groups=1)(x)
         x = layers.Activation(activation)(x)
         x = layers.Conv3D(n_base_filters, **conv_kwds)(x)
-        x = layers.BatchNormalization()(x)
+        # x = tfa.layers.GroupNormalization(groups=1)(x)
         x = layers.Activation(activation)(x)
         x = layers.Conv3D(n_base_filters, **conv_kwds)(x)
         x = layers.Add()([x, skip])
 
-    x = ZeroPadding3DChannels(8)(x)
+    x = ZeroPadding3DChannels(n_base_filters // 2)(x)
     for ii in range(3):
         skip = x
-        x = layers.BatchNormalization()(x)
+        # x = tfa.layers.GroupNormalization(groups=1)(x)
         x = layers.Activation(activation)(x)
         x = layers.Conv3D(n_base_filters*2, dilation_rate=2, **conv_kwds)(x)
-        x = layers.BatchNormalization()(x)
+        # x = tfa.layers.GroupNormalization(groups=1)(x)
         x = layers.Activation(activation)(x)
         x = layers.Conv3D(n_base_filters*2, dilation_rate=2, **conv_kwds)(x)
         x = layers.Add()([x, skip])
 
-    x = ZeroPadding3DChannels(16)(x)
+    x = ZeroPadding3DChannels(n_base_filters)(x)
     for ii in range(3):
         skip = x
-        x = layers.BatchNormalization()(x)
+        # x = tfa.layers.GroupNormalization(groups=1)(x)
         x = layers.Activation(activation)(x)
         x = layers.Conv3D(n_base_filters*4, dilation_rate=4, **conv_kwds)(x)
-        x = layers.BatchNormalization()(x)
+        # x = tfa.layers.GroupNormalization(groups=1)(x)
         x = layers.Activation(activation)(x)
         x = layers.Conv3D(n_base_filters*4, dilation_rate=4, **conv_kwds)(x)
         x = layers.Add()([x, skip])
